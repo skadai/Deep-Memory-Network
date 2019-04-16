@@ -72,17 +72,21 @@ class MemN2N(object):
             '''
             Bi-linear scoring function for a context word and aspect term
             '''
+            # 每一条进行一次attention 结果和 linear 结果相加
             self.til_hid = tf.tile(self.hid[-1], [1, self.mem_size])
             self.til_hid3dim = tf.reshape(self.til_hid, [-1, self.mem_size, self.edim])
             self.a_til_concat = tf.concat(axis=2, values=[self.til_hid3dim, self.Ain])
             self.til_bl_wt = tf.tile(self.BL_W, [self.batch_size, 1])
             self.til_bl_3dim = tf.reshape(self.til_bl_wt, [self.batch_size, 2 * self.edim, -1])
+
+            # til_bl_3dim只是一个中间变量
             self.att = tf.matmul(self.a_til_concat, self.til_bl_3dim)
             self.til_bl_b = tf.tile(self.BL_B, [self.batch_size, self.mem_size])
             self.til_bl_3dim = tf.reshape(self.til_bl_b, [-1, self.mem_size, 1])
             self.g = tf.nn.tanh(tf.add(self.att, self.til_bl_3dim))
             self.g_2dim = tf.reshape(self.g, [-1, self.mem_size])
             self.masked_g_2dim = tf.add(self.g_2dim, self.mask)
+            # 此处为何需要一个mask呢？？
             self.P = tf.nn.softmax(self.masked_g_2dim)
             self.probs3dim = tf.reshape(self.P, [-1, 1, self.mem_size])
 
