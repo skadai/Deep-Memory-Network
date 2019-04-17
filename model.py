@@ -2,7 +2,7 @@ import codecs
 import math
 import numpy as np
 import tensorflow as tf
-from past.builtins import xrange
+from past.builtins import range
 
 
 class MemN2N(object):
@@ -47,11 +47,16 @@ class MemN2N(object):
     def build_memory(self):
         self.global_step = tf.Variable(0, name="global_step")
 
+        # embedding vector of context and aspect vector
         self.A = tf.Variable(tf.random_uniform([self.nwords, self.edim], minval=-0.01, maxval=0.01))
         self.ASP = tf.Variable(
             tf.random_uniform([self.pre_trained_target_wt.shape[0], self.edim], minval=-0.01, maxval=0.01))
+
+        # aspect vector linear transform
         self.C = tf.Variable(tf.random_uniform([self.edim, self.edim], minval=-0.01, maxval=0.01))
         self.C_B = tf.Variable(tf.random_uniform([1, self.edim], minval=-0.01, maxval=0.01))
+
+        # attention score function
         self.BL_W = tf.Variable(tf.random_uniform([2 * self.edim, 1], minval=-0.01, maxval=0.01))
         self.BL_B = tf.Variable(tf.random_uniform([1, 1], minval=-0.01, maxval=0.01))
 
@@ -64,55 +69,68 @@ class MemN2N(object):
         # self.Ain = self.Ain_c * location_encoding3dim
         self.Ain = self.Ain_c
 
-        self.ASPin = tf.nn.embedding_lookup(self.ASP, self.input)
-        self.ASPout2dim = tf.reshape(self.ASPin, [-1, self.edim])
+        self.ASPin = tf.nn.embedding_lookup(self.ASP, self.input)  # batch * 1 * edim
+        # 此处为什么需要一个 reshape
+        self.ASPout2dim = tf.reshape(self.ASPin, [-1, self.edim])  # batch * edim
+        # 此处 hid 存储的是 hop 的每一层的输入
         self.hid.append(self.ASPout2dim)
 
-        for h in xrange(self.nhop):
+        for h in range(self.nhop):
             '''
             Bi-linear scoring function for a context word and aspect term
             '''
-            # 每一条进行一次attention 结果和 linear 结果相加
-            self.til_hid = tf.tile(self.hid[-1], [1, self.mem_size])
+            # 每一条进行一次 attention 结果和 linear 结果相加,
+            self.til_hid = tf.tile(self.hid[-1], [1, self.mem_size])  # batch * (edim * mem_size) 2D
+
+            # tile函数只是在某一个维度上进行平行复制, 方便进行attention运算
             self.til_hid3dim = tf.reshape(self.til_hid, [-1, self.mem_size, self.edim])
-            self.a_til_concat = tf.concat(axis=2, values=[self.til_hid3dim, self.Ain])
+
+            # 此处 Ain 的 shape 是 batch_size * mem_size * edim, 刚好和 til_hid3dim是一致的,
+            # 相当于把context memory中每一个和aspect vector进行了concat
+            self.a_til_concat = tf.concat(axis=2, values=[self.til_hid3dim, self.Ain]) #（batch, mem_size, edim*2)
+
+            # 希望通过attention得到 (batch , mem_size, 1) 那么你需要张量 (batch, edim*2, 1) 多维张量乘法就是最后两个维度的矩阵乘法  
             self.til_bl_wt = tf.tile(self.BL_W, [self.batch_size, 1])
+
             self.til_bl_3dim = tf.reshape(self.til_bl_wt, [self.batch_size, 2 * self.edim, -1])
 
             # til_bl_3dim只是一个中间变量
-            self.att = tf.matmul(self.a_til_concat, self.til_bl_3dim)
+            self.att = tf.matmul(self.a_til_concat, self.til_bl_3dim)  # (batch, mem_size, 1)
             self.til_bl_b = tf.tile(self.BL_B, [self.batch_size, self.mem_size])
             self.til_bl_3dim = tf.reshape(self.til_bl_b, [-1, self.mem_size, 1])
-            self.g = tf.nn.tanh(tf.add(self.att, self.til_bl_3dim))
-            self.g_2dim = tf.reshape(self.g, [-1, self.mem_size])
-            self.masked_g_2dim = tf.add(self.g_2dim, self.mask)
-            # 此处为何需要一个mask呢？？
-            self.P = tf.nn.softmax(self.masked_g_2dim)
-            self.probs3dim = tf.reshape(self.P, [-1, 1, self.mem_size])
+            self.g = tf.nn.tanh(tf.add(self.att, self.til_bl_3dim))  # (batch, mem_size, 1)
+            self.g_2dim = tf.reshape(self.g, [-1, self.mem_size])  # (batch, mem_size）
+            self.masked_g_2dim = tf.add(self.g_2dim, self.mask)  # 此处为何需要一个mask呢？？
+            
+            self.P = tf.nn.softmax(self.masked_g_2dim)  # (batch, mem_size）
+            self.probs3dim = tf.reshape(self.P, [-1, 1, self.mem_size])  # (batch , 1, mem_size） 给每个位置计算好一个权重系数
 
-            self.Aout = tf.matmul(self.probs3dim, self.Ain)
-            self.Aout2dim = tf.reshape(self.Aout, [self.batch_size, self.edim])
+            self.Aout = tf.matmul(self.probs3dim, self.Ain)  # (batch, 1, edim)
+            self.Aout2dim = tf.reshape(self.Aout, [self.batch_size, self.edim])  # (batch, edim)
 
+            # batch * edim 对aspect进行线性变换
             Cout = tf.matmul(self.hid[-1], self.C)
             til_C_B = tf.tile(self.C_B, [self.batch_size, 1])
             Cout_add = tf.add(Cout, til_C_B)
-            self.Dout = tf.add(Cout_add, self.Aout2dim)
+            self.Dout = tf.add(Cout_add, self.Aout2dim)  # (batch_size, edim)
 
             if self.lindim == self.edim:
                 self.hid.append(self.Dout)
             elif self.lindim == 0:
                 self.hid.append(tf.nn.relu(self.Dout))
             else:
+                # 这一部分似乎和论文不一致,怀疑是从end2end memory network那一篇抄过来的
                 F = tf.slice(self.Dout, [0, 0], [self.batch_size, self.lindim])
                 G = tf.slice(self.Dout, [0, self.lindim], [self.batch_size, self.edim - self.lindim])
                 K = tf.nn.relu(G)
-                self.hid.append(tf.concat(axis=1, values=[F, K]))
+                self.hid.append(tf.concat(axis=1, values=[F, K]))  # (batch_size, edim)
 
     def build_model(self):
         self.build_memory()
 
+        # 在memory只上将最后的结果进行情感标签输出
         self.W = tf.Variable(tf.random_uniform([self.edim, 3], minval=-0.01, maxval=0.01))
-        self.z = tf.matmul(self.hid[-1], self.W)
+        self.z = tf.matmul(self.hid[-1], self.W)  # (batch , 3)
 
         self.loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.z, labels=self.target)
 
@@ -151,7 +169,7 @@ class MemN2N(object):
             bar = ProgressBar('Train', max=N)
 
         rand_idx, cur = np.random.permutation(len(source_data)), 0
-        for idx in xrange(N):
+        for idx in range(N):
             if self.show: bar.next()
 
             context.fill(self.pad_idx)
@@ -159,7 +177,7 @@ class MemN2N(object):
             target.fill(0)
             mask.fill(-1.0 * np.inf)
 
-            for b in xrange(self.batch_size):
+            for b in range(self.batch_size):
                 if cur >= len(rand_idx): break
                 m = rand_idx[cur]
                 x[b][0] = target_data[m]
@@ -201,14 +219,14 @@ class MemN2N(object):
         m, acc = 0, 0
         predicts, labels = [], []
         sentences, targets = [], []
-        for i in xrange(N):
+        for i in range(N):
             target.fill(0)
             time.fill(self.mem_size)
             context.fill(self.pad_idx)
             mask.fill(-1.0 * np.inf)
 
             raw_labels = []
-            for b in xrange(self.batch_size):
+            for b in range(self.batch_size):
                 if m >= len(target_label): break
 
                 x[b][0] = target_data[m]
@@ -235,7 +253,7 @@ class MemN2N(object):
                                                                             self.target: target,
                                                                             self.context: context,
                                                                             self.mask: mask})
-            for b in xrange(self.batch_size):
+            for b in range(self.batch_size):
                 if b >= len(raw_labels): break
                 predicts.append(predictions[b])
                 labels.append(raw_labels[b])
@@ -250,7 +268,7 @@ class MemN2N(object):
         self.sess.run(self.ASP.assign(self.pre_trained_target_wt))
 
         best_acc = 0
-        for idx in xrange(self.nepoch):
+        for idx in range(self.nepoch):
             print('epoch ' + str(idx) + '...')
             train_loss, train_acc = self.train(train_data)
             test_loss, test_acc, predicts, labels, sentences, targets = self.test(test_data)
