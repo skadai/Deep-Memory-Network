@@ -24,7 +24,9 @@ def init_word_embeddings(embed_file_name, word_set, edim):
 
 
 def get_dataset_resources(data_file_name, sent_word2idx, target_word2idx, word_set, max_sent_len):
-    ''' updates word2idx and word_set '''
+    """
+        updates word2idx and word_set
+    """
     if len(sent_word2idx) == 0:
         sent_word2idx["<pad>"] = 0
 
@@ -72,7 +74,9 @@ def get_dataset_resources(data_file_name, sent_word2idx, target_word2idx, word_s
 
 
 def get_embedding_matrix(embeddings, sent_word2idx, target_word2idx, edim):
-    ''' returns the word and target embedding matrix '''
+    """
+        returns the word and target embedding matrix
+    """
     word_embed_matrix = np.zeros([len(sent_word2idx), edim], dtype=float)
     target_embed_matrix = np.zeros([len(target_word2idx), edim], dtype=float)
 

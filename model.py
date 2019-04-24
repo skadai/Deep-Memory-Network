@@ -67,9 +67,9 @@ class MemN2N(object):
 
         self.Ain_c = tf.nn.embedding_lookup(self.A, self.context)
         # self.Ain = self.Ain_c * location_encoding3dim
-        self.Ain = self.Ain_c
+        self.Ain = self.Ain_c    # (batch, memsize, edim)
 
-        self.ASPin = tf.nn.embedding_lookup(self.ASP, self.input)  # batch * 1 * edim
+        self.ASPin = tf.nn.embedding_lookup(self.ASP, self.input)  # (batch, 1, edim)
         # 此处为什么需要一个 reshape
         self.ASPout2dim = tf.reshape(self.ASPin, [-1, self.edim])  # batch * edim
         # 此处 hid 存储的是 hop 的每一层的输入
@@ -82,7 +82,7 @@ class MemN2N(object):
             # 每一条进行一次 attention 结果和 linear 结果相加,
             self.til_hid = tf.tile(self.hid[-1], [1, self.mem_size])  # batch * (edim * mem_size) 2D
 
-            # tile函数只是在某一个维度上进行平行复制, 方便进行attention运算
+            # tile函数只是在某一个维度上进行复制扩展, 方便进行attention运算
             self.til_hid3dim = tf.reshape(self.til_hid, [-1, self.mem_size, self.edim])
 
             # 此处 Ain 的 shape 是 batch_size * mem_size * edim, 刚好和 til_hid3dim是一致的,
@@ -105,6 +105,7 @@ class MemN2N(object):
             self.P = tf.nn.softmax(self.masked_g_2dim)  # (batch, mem_size）
             self.probs3dim = tf.reshape(self.P, [-1, 1, self.mem_size])  # (batch , 1, mem_size） 给每个位置计算好一个权重系数
 
+            # 这里Ain (batch, memsize, edim), 希望得到一个 (batch, 1, edim) , 则应该有系数是 (batch, 1 , memsize)
             self.Aout = tf.matmul(self.probs3dim, self.Ain)  # (batch, 1, edim)
             self.Aout2dim = tf.reshape(self.Aout, [self.batch_size, self.edim])  # (batch, edim)
 
@@ -137,6 +138,7 @@ class MemN2N(object):
         self.lr = tf.Variable(self.current_lr)
         self.opt = tf.train.AdagradOptimizer(self.lr)
 
+        # 此处的参数就是所有需要训练的东西了为何没有ASP?
         params = [self.A, self.C, self.C_B, self.W, self.BL_W, self.BL_B]
 
         self.loss = tf.reduce_sum(self.loss)
@@ -145,6 +147,9 @@ class MemN2N(object):
         clipped_grads_and_vars = [(tf.clip_by_norm(gv[0], self.max_grad_norm), gv[1]) \
                                   for gv in grads_and_vars]
 
+        # 优化器自带的 minimize函数不过就是
+        # 1）计算梯度 compute_gradients
+        # 2）分配梯度 apply_gradients
         inc = self.global_step.assign_add(1)
         with tf.control_dependencies([inc]):
             self.optim = self.opt.apply_gradients(clipped_grads_and_vars)
@@ -200,6 +205,7 @@ class MemN2N(object):
             cost += np.sum(loss)
 
         if self.show: bar.finish()
+        # 这里的test其实求得的是训练误差
         _, train_acc, _, _, _, _ = self.test(data)
         return cost / N / self.batch_size, train_acc
 

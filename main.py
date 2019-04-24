@@ -10,7 +10,7 @@ flags = tf.app.flags
 flags.DEFINE_integer("edim", 300, "internal state dimension [300]")
 flags.DEFINE_integer("lindim", 100, "linear part of the state [75]")
 flags.DEFINE_integer("nhop", 3, "number of hops [7]")
-flags.DEFINE_integer("batch_size", 1, "batch size to use during training [1]")
+flags.DEFINE_integer("batch_size", 16, "batch size to use during training [1]")
 flags.DEFINE_integer("nepoch", 20, "number of epoch to use during training [100]")
 flags.DEFINE_float("init_lr", 0.01, "initial learning rate [0.01]")
 flags.DEFINE_float("init_hid", 0.1, "initial internal state value [0.1]")
@@ -20,7 +20,7 @@ flags.DEFINE_string("pretrain_embeddings", "glove-common_crawl_840",
                     "pre-trained word embeddings [glove-wikipedia_gigaword, glove-common_crawl_48, glove-common_crawl_840]")
 flags.DEFINE_string("train_data", "data/Restaurants_Train_v2.xml.seg", "train gold data set path [./data/Laptops_Train.xml.seg]")
 flags.DEFINE_string("test_data", "data/Restaurants_Test_Gold.xml.seg", "test gold data set path [./data/Laptops_Test_Gold.xml.seg]")
-flags.DEFINE_boolean("show", False, "print progress [False]")
+flags.DEFINE_boolean("show", True, "print progress [False]")
 
 FLAGS = flags.FLAGS
 
